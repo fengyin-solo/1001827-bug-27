@@ -27,6 +27,11 @@ class Store:
                 return row
         return None
 
+    def save(self, module: str) -> None:
+        """把模块改动落库。真实项目里这里是数据库提交，可能抛错；
+        内存实现无需真正写盘，但保留这个口子，业务层才能在提交失败时回滚原值。"""
+        self._tables.setdefault(module, [])
+
     def overview(self) -> dict[str, object]:
         modules: list[dict[str, object]] = []
         for name in self.module_names():
