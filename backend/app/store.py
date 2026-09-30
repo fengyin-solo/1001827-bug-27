@@ -9,6 +9,10 @@ from typing import Any
 from app.seed import SEED_ROWS
 
 
+class StoreError(Exception):
+    """落库失败时抛出：调用方负责保留现场，并给出可以再试一次的提示。"""
+
+
 class Store:
     def __init__(self) -> None:
         self._tables: dict[str, list[dict[str, Any]]] = {
@@ -20,6 +24,37 @@ class Store:
 
     def rows(self, module: str) -> list[dict[str, Any]]:
         return self._tables.setdefault(module, [])
+
+    def view(self, module: str) -> list[dict[str, Any]]:
+        """只读查看：模块还不存在时返回空表，不像 rows() 那样顺手建表。"""
+        return self._tables.get(module, [])
+
+    def upsert(
+        self,
+        module: str,
+        *,
+        key: str,
+        value: Any,
+        entry: dict[str, Any],
+    ) -> dict[str, Any]:
+        """按 key 覆盖写入：同 key 记录整行替换（后到那一份覆盖），否则追加。
+
+        先校验再落库；校验失败抛 StoreError，已有记录保持原值不动。
+        """
+        if not str(value or "").strip():
+            raise StoreError(f"缺少定位字段「{key}」，无法落库")
+        if not isinstance(entry, dict) or not entry:
+            raise StoreError("写入内容为空，无法落库")
+        rows = self.rows(module)
+        new_entry = dict(entry)
+        for index, row in enumerate(rows):
+            if str(row.get(key, "")) == str(value):
+                new_entry.setdefault("id", row.get("id"))
+                rows[index] = new_entry
+                return new_entry
+        new_entry["id"] = max((int(row.get("id", 0)) for row in rows), default=0) + 1
+        rows.append(new_entry)
+        return new_entry
 
     def find(self, module: str, entry_id: int) -> dict[str, Any] | None:
         for row in self.rows(module):
